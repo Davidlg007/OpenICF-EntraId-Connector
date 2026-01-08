@@ -275,7 +275,7 @@ public class EntraIDConnector
         }
 
         // 1. Check for existing Cookie (Pagination)
-        String cookieUrl = options.getPagedResultsCookie();
+        String cookieUrl = (options != null) ? options.getPagedResultsCookie() : null;
         UserCollectionResponse response;
 
         try {
@@ -294,7 +294,7 @@ public class EntraIDConnector
                     }
 
                     // Apply Page Size (Limit)
-                    if (options.getPageSize() != null && options.getPageSize() > 0) {
+                    if (options != null && options.getPageSize() != null && options.getPageSize() > 0) {
                         requestConfiguration.queryParameters.top = options.getPageSize();
                     }
 

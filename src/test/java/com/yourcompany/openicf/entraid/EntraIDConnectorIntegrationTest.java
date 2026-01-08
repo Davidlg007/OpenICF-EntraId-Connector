@@ -118,6 +118,26 @@ public class EntraIDConnectorIntegrationTest {
         System.out.println("Created User UPN: " + generatedUserPrincipalName + ", UID: " + generatedUid.getUidValue());
     }
 
+    private void waitFor(String message, java.util.function.Supplier<Boolean> condition) {
+        long start = System.currentTimeMillis();
+        long timeout = 30000; // 30 seconds
+        long sleep = 2000;
+
+        while (System.currentTimeMillis() - start < timeout) {
+            if (condition.get()) {
+                return;
+            }
+            try {
+                System.out.println("Waiting for: " + message + "...");
+                Thread.sleep(sleep);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        }
+        throw new AssertionError("Timed out waiting for: " + message);
+    }
+
     @Test
     @Order(3)
     public void search() {
@@ -141,18 +161,16 @@ public class EntraIDConnectorIntegrationTest {
         // Let's search by UserPrincipalName which is mapped to Name
 
         final ConnectorObject[] result = new ConnectorObject[1];
-        connector.executeQuery(ObjectClass.ACCOUNT, "userPrincipalName eq '" + generatedUserPrincipalName + "'",
-                new SearchResultsHandler() {
-                    @Override
-                    public boolean handle(ConnectorObject obj) {
+
+        waitFor("User to be found via search", () -> {
+            result[0] = null; // Reset
+            connector.executeQuery(ObjectClass.ACCOUNT, "userPrincipalName eq '" + generatedUserPrincipalName + "'",
+                    obj -> {
                         result[0] = obj;
                         return true;
-                    }
-
-                    @Override
-                    public void handleResult(SearchResult searchResult) {
-                    }
-                }, null);
+                    }, null);
+            return result[0] != null;
+        });
 
         assertThat(result[0]).isNotNull();
         assertThat(result[0].getUid()).isEqualTo(generatedUid);
@@ -213,13 +231,22 @@ public class EntraIDConnectorIntegrationTest {
 
         connector.update(ObjectClass.ACCOUNT, generatedUid, updateAttrs, null);
 
-        // Verify
+        // Verify update with retry
         final ConnectorObject[] verifyResult = new ConnectorObject[1];
-        connector.executeQuery(ObjectClass.ACCOUNT, "userPrincipalName eq '" + generatedUserPrincipalName + "'",
-                obj -> {
-                    verifyResult[0] = obj;
-                    return true;
-                }, null);
+
+        waitFor("User display name update", () -> {
+            verifyResult[0] = null;
+            connector.executeQuery(ObjectClass.ACCOUNT, "userPrincipalName eq '" + generatedUserPrincipalName + "'",
+                    obj -> {
+                        verifyResult[0] = obj;
+                        return true;
+                    }, null);
+
+            if (verifyResult[0] == null)
+                return false;
+            Attribute attr = verifyResult[0].getAttributeByName("displayName");
+            return attr != null && newDisplayName.equals(attr.getValue().get(0));
+        });
 
         assertThat(verifyResult[0]).isNotNull();
         Attribute displayNameAttr = verifyResult[0].getAttributeByName("displayName");
@@ -236,11 +263,16 @@ public class EntraIDConnectorIntegrationTest {
 
         // Verify deletion
         final ConnectorObject[] result = new ConnectorObject[1];
-        connector.executeQuery(ObjectClass.ACCOUNT, "userPrincipalName eq '" + generatedUserPrincipalName + "'",
-                obj -> {
-                    result[0] = obj;
-                    return true;
-                }, null);
+
+        waitFor("User to be deleted", () -> {
+            result[0] = null;
+            connector.executeQuery(ObjectClass.ACCOUNT, "userPrincipalName eq '" + generatedUserPrincipalName + "'",
+                    obj -> {
+                        result[0] = obj;
+                        return true;
+                    }, null);
+            return result[0] == null;
+        });
 
         assertThat(result[0]).isNull();
     }
@@ -252,6 +284,7 @@ public class EntraIDConnectorIntegrationTest {
                 connector.delete(ObjectClass.ACCOUNT, generatedUid, null);
                 System.out.println("Cleanup: Deleted user " + generatedUid.getUidValue());
             } catch (Exception e) {
+                // Ignore if already deleted
                 System.out.println("Cleanup: Failed to delete user (might be already deleted): " + e.getMessage());
             }
         }
