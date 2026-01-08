@@ -45,6 +45,10 @@ public class EntraIDConnectorIntegrationTest {
     private static final io.github.cdimascio.dotenv.Dotenv dotenv = io.github.cdimascio.dotenv.Dotenv.configure()
             .ignoreIfMissing().load();
 
+    // State flags for dependencies
+    private boolean initPassed = false;
+    private boolean createPassed = false;
+
     @Test
     @Order(1)
     public void init() {
@@ -65,6 +69,8 @@ public class EntraIDConnectorIntegrationTest {
 
         // Internal testConnection is called inside init, so if we are here, it passed.
         // We can double check if needed, but init() success implies connectivity.
+        // Mark as passed
+        initPassed = true;
     }
 
     private String getEnv(String key) {
@@ -94,6 +100,7 @@ public class EntraIDConnectorIntegrationTest {
     @Test
     @Order(2)
     public void create() {
+        assumeTrue(initPassed, "Skipping because init failed or was skipped");
         assumeTrue(connector != null, "Connector not initialized");
         assertThat(connector).isNotNull();
 
@@ -116,6 +123,8 @@ public class EntraIDConnectorIntegrationTest {
         assertThat(generatedUid).isNotNull();
         assertThat(generatedUid.getUidValue()).isNotBlank();
         System.out.println("Created User UPN: " + generatedUserPrincipalName + ", UID: " + generatedUid.getUidValue());
+
+        createPassed = true;
     }
 
     private void waitFor(String message, java.util.function.Supplier<Boolean> condition) {
@@ -141,6 +150,7 @@ public class EntraIDConnectorIntegrationTest {
     @Test
     @Order(3)
     public void search() {
+        assumeTrue(createPassed, "Skipping because create failed or was skipped");
         assumeTrue(connector != null, "Connector not initialized");
         assertThat(generatedUid).isNotNull();
 
@@ -180,6 +190,7 @@ public class EntraIDConnectorIntegrationTest {
     @Test
     @Order(4)
     public void update() {
+        assumeTrue(createPassed, "Skipping because create failed or was skipped");
         assumeTrue(connector != null, "Connector not initialized");
         assertThat(generatedUid).isNotNull();
 
@@ -257,6 +268,12 @@ public class EntraIDConnectorIntegrationTest {
     @Test
     @Order(5)
     public void delete() {
+        // We might want to attempt delete even if create "failed" if a UID was
+        // generated,
+        // but if createPassed is false, likely generatedUid is null.
+        // If generatedUid is NOT null, we should try delete.
+        // But for strict dependency:
+        assumeTrue(createPassed, "Skipping because create failed or was skipped");
         assumeTrue(connector != null, "Connector not initialized");
         assertThat(generatedUid).isNotNull();
         connector.delete(ObjectClass.ACCOUNT, generatedUid, null);
