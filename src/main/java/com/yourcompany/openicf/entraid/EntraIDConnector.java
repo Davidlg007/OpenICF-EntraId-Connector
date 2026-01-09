@@ -39,6 +39,7 @@ import org.identityconnectors.framework.spi.operations.CreateOp;
 import org.identityconnectors.framework.spi.operations.DeleteOp;
 import org.identityconnectors.framework.spi.operations.SchemaOp;
 import org.identityconnectors.framework.spi.operations.SearchOp;
+import org.identityconnectors.framework.spi.operations.TestOp;
 import org.identityconnectors.framework.spi.operations.UpdateAttributeValuesOp;
 import org.identityconnectors.framework.spi.operations.UpdateOp;
 
@@ -64,7 +65,8 @@ import com.microsoft.graph.users.UsersRequestBuilder;
  */
 @ConnectorClass(configurationClass = EntraIDConfiguration.class, displayNameKey = "entraid.connector.display")
 public class EntraIDConnector
-        implements Connector, SchemaOp, CreateOp, SearchOp<String>, UpdateAttributeValuesOp, DeleteOp, UpdateOp {
+        implements Connector, SchemaOp, CreateOp, SearchOp<String>, UpdateAttributeValuesOp, DeleteOp, UpdateOp,
+        TestOp {
 
     private static final Log LOG = Log.getLog(EntraIDConnector.class);
 
@@ -76,6 +78,10 @@ public class EntraIDConnector
 
     private EntraIDConfiguration configuration;
     private GraphServiceClient graphClient;
+
+    public EntraIDConnector() {
+        // Default constructor for OpenICF
+    }
 
     @Override
     public Configuration getConfiguration() {
@@ -94,9 +100,13 @@ public class EntraIDConnector
         String tenantId = this.configuration.getTenantId();
         String clientId = this.configuration.getClientId();
 
-        final StringBuilder clientSecretBuilder = new StringBuilder();
-        this.configuration.getClientSecret().access(chars -> clientSecretBuilder.append(new String(chars)));
-        String clientSecret = clientSecretBuilder.toString();
+        final String[] secretValue = new String[1];
+        if (this.configuration.getClientSecret() != null) {
+            this.configuration.getClientSecret().access(chars -> {
+                secretValue[0] = new String(chars);
+            });
+        }
+        String clientSecret = secretValue[0];
 
         // Using ClientSecretCredential for daemon authentication (App-only access).
         // This is suitable for background services where no user is interactively
@@ -131,6 +141,24 @@ public class EntraIDConnector
     public void dispose() {
         this.graphClient = null;
         this.configuration = null;
+    }
+
+    /**
+     * Tests the configuration with the connector.
+     */
+    @Override
+    public void test() {
+        if (this.graphClient == null) {
+            throw new ConnectorException("Graph Client was not initialized");
+        }
+
+        try {
+            // Perform a lightweight read to verify connectivity
+            this.graphClient.organization().get();
+        } catch (Exception e) {
+            // Propagate the error so the UI shows "Test Failed"
+            throw new ConnectorException("Connection check failed: " + e.getMessage(), e);
+        }
     }
 
     /**
